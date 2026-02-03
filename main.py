@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Главный скрипт запуска Zoom агента с использованием Zoom Desktop SDK API
+Главный скрипт запуска Zoom агента с использованием Zoom URI протокола
 """
 
 import asyncio
 import signal
 import sys
+import urllib.parse
 import time
 import traceback
 from typing import Optional
@@ -14,9 +15,8 @@ from config import settings
 from utils.logger import setup_logger
 
 try:
-    # Используем наш ctypes клиент
-    from zoom_integration.zoom_sdk_ctypes import ZoomSDKCtypesClient as ZoomDesktopSDKClient
-    from zoom_integration.zoom_sdk_ctypes import ZoomMeetingInfo, ZoomSDKStatus
+    # Используем новый URI клиент
+    from zoom_integration.zoom_uri_client import ZoomURIClient, ZoomMeetingInfo, ZoomClientStatus
     from dashboard.server import DashboardServer
     from transcription.webhook_server import WebhookServer
     from state_manager.meeting_state import MeetingState, MeetingStatus
@@ -37,7 +37,7 @@ class ZoomAgentBot:
     def __init__(self):
         self.running = False
         self.state = None
-        self.zoom_client: Optional[ZoomDesktopSDKClient] = None
+        self.zoom_client: Optional[ZoomURIClient] = None
         self.dashboard_server = None
         self.webhook_server = None
         self.news_agent = None
@@ -79,7 +79,7 @@ class ZoomAgentBot:
 
     async def initialize(self):
         """Инициализация всех компонентов"""
-        logger.info("Initializing Zoom Agent Bot with Desktop SDK...")
+        logger.info("Initializing Zoom Agent Bot with URI protocol...")
 
         # Инициализация состояния встречи
         self.state = MeetingState()
@@ -92,16 +92,9 @@ class ZoomAgentBot:
         self.analyzer = TranscriptAnalyzer()
         self.processor = get_transcript_processor(self.state)
 
-        # Инициализация Zoom Desktop SDK клиента
-        self.zoom_client = ZoomDesktopSDKClient(self.state)
-
-        # Инициализация SDK
-        if not await self.zoom_client.initialize_sdk():
-            logger.error("Failed to initialize Zoom SDK")
-            if not settings.USE_MOCK_TRANSCRIPT:
-                raise RuntimeError("Zoom SDK initialization failed")
-            else:
-                logger.info("Continuing in mock mode despite SDK failure")
+        # Инициализация Zoom URI клиента
+        self.zoom_client = ZoomURIClient(self.state)
+        logger.info("Zoom URI client initialized successfully")
 
         # Запуск фоновой обработки транскрипта
         if self.processor:
@@ -169,7 +162,8 @@ class ZoomAgentBot:
             )
 
             logger.info(f"Prepared meeting info: ID={meeting_id}, "
-                        f"Display Name={meeting_info.display_name}")
+                        f"Display Name={meeting_info.display_name}, "
+                        f"Has Password={bool(password)}")
 
             return meeting_info
 
@@ -178,8 +172,8 @@ class ZoomAgentBot:
             return None
 
     async def start_meeting_flow(self):
-        """Запуск основного потока работы в встрече через Desktop SDK"""
-        logger.info("Starting meeting flow with Desktop SDK...")
+        """Запуск основного потока работы в встрече через URI протокол"""
+        logger.info("Starting meeting flow with Zoom URI protocol...")
 
         try:
             # 1. Подготовка информации о встрече
@@ -192,29 +186,71 @@ class ZoomAgentBot:
                     logger.warning("No meeting info, continuing in mock mode")
                     return False
 
-            # 2. Присоединение к встрече через SDK
-            logger.info(f"Joining meeting: {meeting_info.meeting_id}")
+            # 2. Генерируем ссылки для подключения
+            zoom_uri = f"zoommtg://zoom.us/join?confno={meeting_info.meeting_id}&uname={urllib.parse.quote(meeting_info.display_name)}"
+            if meeting_info.password:
+                zoom_uri += f"&pwd={meeting_info.password}"
+
+            if meeting_info.no_audio:
+                zoom_uri += "&audio=off"
+            if meeting_info.no_video:
+                zoom_uri += "&video=off"
+
+            web_url = f"https://zoom.us/j/{meeting_info.meeting_id}"
+            if meeting_info.password:
+                web_url += f"?pwd={meeting_info.password}"
+
+            logger.info(f"Join links generated:")
+            logger.info(f"  Zoom URI: {zoom_uri}")
+            logger.info(f"  Web URL: {web_url}")
+
+            # 3. Присоединение к встрече через Zoom клиент
+            logger.info(f"Opening Zoom client for meeting: {meeting_info.meeting_id}")
 
             join_success = await self.zoom_client.join_meeting(meeting_info)
             if not join_success:
-                if not settings.USE_MOCK_TRANSCRIPT:
-                    logger.error("Failed to join meeting")
-                    return False
-                else:
-                    logger.warning("Failed to join meeting, continuing in mock mode")
-                    return False
+                logger.error("Failed to initiate meeting join")
+                return False
 
-            logger.info("Meeting flow started successfully via SDK")
+            logger.info("Zoom client opened successfully via URI protocol")
 
             # Обновляем состояние
-            self.state.update_status(MeetingStatus.IN_MEETING.value)  # Используем .value
+            self.state.update_status(MeetingStatus.IN_MEETING.value)
             self.state.update({
                 'meeting_id': meeting_info.meeting_id,
                 'display_name': meeting_info.display_name,
                 'joined_time': time.time(),
                 'zoom_status': 'in_meeting',
-                'meeting_start_time': time.time()
+                'meeting_start_time': time.time(),
+                'join_method': 'zoom_uri',
+                'zoom_uri': zoom_uri,
+                'web_url': web_url
             })
+
+            # Предоставляем инструкции пользователю
+            instructions = """
+            ============================================
+            ИНСТРУКЦИИ ПО РАБОТЕ С ZOOM КЛИЕНТОМ:
+
+            1. Zoom клиент должен был открыться автоматически
+            2. Если нет, вручную откройте Zoom и присоединитесь к встрече
+            3. Встреча может потребовать подтверждения пароля
+
+            Ссылки для подключения:
+            - Zoom клиент: {zoom_uri}
+            - Веб-версия: {web_url}
+
+            ID встречи: {meeting_id}
+            Пароль: {password}
+            ============================================
+            """.format(
+                zoom_uri=zoom_uri,
+                web_url=web_url,
+                meeting_id=meeting_info.meeting_id,
+                password=meeting_info.password or 'не требуется'
+            )
+
+            logger.info(instructions)
 
             return True
 
@@ -227,7 +263,8 @@ class ZoomAgentBot:
                 logger.info("Falling back to mock transcript mode")
                 self.state.update({
                     'mock_mode': True,
-                    'error': str(e)
+                    'error': str(e),
+                    'meeting_id': meeting_info.meeting_id if meeting_info else 'mock'
                 })
                 return True
             else:
@@ -235,10 +272,10 @@ class ZoomAgentBot:
                 return False
 
     async def monitor_zoom_connection(self):
-        """Мониторинг состояния подключения к Zoom"""
-        logger.info("Starting Zoom connection monitoring...")
+        """Мониторинг состояния подключения к Zoom (упрощенный для URI)"""
+        logger.info("Starting simplified Zoom connection monitoring...")
 
-        check_interval = 30  # Проверка каждые 30 секунд
+        check_interval = 60  # Проверка каждые 60 секунд
 
         while self.running and self.zoom_client and not self._shutdown_flag:
             try:
@@ -253,22 +290,9 @@ class ZoomAgentBot:
                 # Обновляем состояние в дашборде
                 self.state.update({
                     'zoom_status': current_status.value,
-                    'last_status_check': time.time()
+                    'last_status_check': time.time(),
+                    'status_info': self.zoom_client.get_status_info()
                 })
-
-                # Проверяем критические состояния
-                if current_status == ZoomSDKStatus.ERROR:
-                    logger.error("Zoom SDK reported error state")
-                    # Можно попробовать восстановить соединение
-                    if settings.ZOOM_AUTO_RECONNECT:
-                        logger.info("Attempting to reconnect...")
-                        await asyncio.sleep(5)
-
-                        # Пытаемся переподключиться
-                        if hasattr(self.zoom_client, 'meeting_info') and self.zoom_client.meeting_info:
-                            await self.zoom_client.leave_meeting()
-                            await asyncio.sleep(2)
-                            await self.zoom_client.join_meeting(self.zoom_client.meeting_info)
 
                 await asyncio.sleep(check_interval)
 
@@ -290,11 +314,19 @@ class ZoomAgentBot:
                     status_info = self.zoom_client.get_status_info()
                     self.state.update(status_info)
 
-                # Периодически запускаем обработку транскрипта
+                # Периодически запускаем обработку транскрипта с меньшим таймаутом
                 if self.processor and hasattr(self.processor, 'force_process_sync'):
-                    result = self.processor.force_process_sync()
-                    if result and result.get("status") == "success":
-                        logger.debug("Dashboard updated via force process")
+                    try:
+                        # Используем меньший таймаут (5 секунд)
+                        result = self.processor.force_process_sync(timeout=5)
+                        if result and result.get("status") == "success":
+                            logger.debug("Dashboard updated via force process")
+                        elif result and result.get("status") == "timeout":
+                            logger.debug("Force process timed out (expected with no data)")
+                        elif result and result.get("status") == "error":
+                            logger.debug(f"Force process error: {result.get('message')}")
+                    except Exception as e:
+                        logger.debug(f"Force process failed: {e}")
 
                 await asyncio.sleep(10)  # Проверка каждые 10 секунд
 
@@ -345,7 +377,7 @@ class ZoomAgentBot:
                     if meeting_started:
                         logger.info("Zoom meeting flow started successfully")
 
-                        # Запускаем мониторинг соединения
+                        # Запускаем упрощенный мониторинг соединения
                         monitoring_task = asyncio.create_task(
                             self.monitor_zoom_connection(),
                             name="zoom_monitoring"
@@ -368,7 +400,8 @@ class ZoomAgentBot:
                 self.state.update_status(MeetingStatus.CONNECTED)
                 self.state.update({
                     'mock_mode': True,
-                    'status': 'mock_mode'
+                    'status': 'mock_mode',
+                    'zoom_status': 'mock'
                 })
 
             # 5. Основной цикл работы
@@ -433,17 +466,10 @@ class ZoomAgentBot:
                     shutdown_errors.append(f"processor: {e}")
 
             if self.zoom_client:
-                logger.info("Disconnecting from Zoom...")
+                logger.info("Cleaning up Zoom client...")
                 try:
-                    # Сначала выходим из встречи, если мы в ней
-                    if hasattr(self.zoom_client, 'status'):
-                        if self.zoom_client.status in [ZoomSDKStatus.IN_MEETING,
-                                                       ZoomSDKStatus.SCREEN_SHARING]:
-                            await self.zoom_client.leave_meeting()
-
-                    # Затем очищаем ресурсы SDK
-                    if hasattr(self.zoom_client, 'cleanup'):
-                        await self.zoom_client.cleanup()
+                    await self.zoom_client.leave_meeting()  # Информационное сообщение
+                    await self.zoom_client.cleanup()
                 except Exception as e:
                     shutdown_errors.append(f"zoom_client: {e}")
 
@@ -486,7 +512,7 @@ def main():
     try:
         # Проверяем настройки перед запуском
         logger.info("=" * 50)
-        logger.info("Starting Zoom Agent Bot")
+        logger.info("Starting Zoom Agent Bot (URI Protocol Version)")
         logger.info("=" * 50)
 
         if not settings.ZOOM_MEETING_URL and not settings.ZOOM_MEETING_ID and not settings.USE_MOCK_TRANSCRIPT:
@@ -494,16 +520,15 @@ def main():
             logger.info("Please set Zoom meeting configuration or enable USE_MOCK_TRANSCRIPT")
             sys.exit(1)
 
-        # Проверяем учетные данные Zoom
-        if not settings.ZOOM_CLIENT_ID or not settings.ZOOM_CLIENT_SECRET:
-            logger.warning("Zoom OAuth credentials not fully configured")
-            logger.info("Client ID and Secret are required for Desktop SDK authentication")
+        # Проверяем наличие Zoom клиента на системе
+        logger.info("Zoom client check:")
+        logger.info("  - Для работы бота нужен установленный Zoom Desktop клиент")
+        logger.info("  - Бот будет открывать Zoom через стандартный URI протокол")
+        logger.info("  - Веб-версия будет использована как fallback")
 
-            if not settings.USE_MOCK_TRANSCRIPT:
-                logger.error("Cannot proceed without Zoom credentials")
-                sys.exit(1)
-            else:
-                logger.info("Continuing in mock mode without Zoom credentials")
+        # Предупреждение о необходимости ручного управления
+        logger.warning("ВАЖНО: Этот бот использует Zoom клиент, управляемый вручную")
+        logger.warning("Для демонстрации экрана и других действий потребуется ручное управление")
 
         bot = ZoomAgentBot()
 
