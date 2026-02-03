@@ -1,8 +1,0 @@
-2026-02-03 23:13:16,639 - __main__ - ERROR - main.py:153 - Error in main loop: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
-2026-02-03 23:14:28,601 - __main__ - ERROR - main.py:153 - Error in main loop: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
-2026-02-03 23:16:09,551 - __main__ - ERROR - main.py:153 - Error in main loop: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
-2026-02-03 23:18:25,646 - __main__ - ERROR - main.py:153 - Error in main loop: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
-2026-02-03 23:22:09,019 - __main__ - ERROR - main.py:141 - Error in main loop: AsyncClient.__init__() got an unexpected keyword argument 'proxies'
-2026-02-03 23:24:43,258 - __main__ - ERROR - main.py:44 - Failed to load required components
-2026-02-03 23:25:49,682 - __main__ - ERROR - main.py:44 - Failed to load required components
-2026-02-03 23:26:22,551 - __main__ - ERROR - main.py:44 - Failed to load required components
