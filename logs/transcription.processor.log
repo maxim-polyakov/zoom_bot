@@ -38,3 +38,11 @@
 2026-02-03 23:30:46,025 - transcription.processor - ERROR - processor.py:166 - Processing error: 
 2026-02-03 23:31:17,047 - transcription.processor - ERROR - processor.py:166 - Processing error: 
 2026-02-03 23:31:48,056 - transcription.processor - ERROR - processor.py:166 - Processing error: 
+2026-02-03 23:33:48,866 - transcription.processor - INFO - processor.py:114 - TranscriptProcessor initialized
+2026-02-03 23:33:49,019 - transcription.processor - INFO - processor.py:129 - Background processing started
+2026-02-03 23:33:49,073 - transcription.processor - INFO - processor.py:145 - Processing loop started
+2026-02-03 23:34:19,075 - transcription.processor - ERROR - processor.py:166 - Processing error: 
+2026-02-03 23:34:50,095 - transcription.processor - ERROR - processor.py:166 - Processing error: 
+2026-02-03 23:36:01,744 - transcription.processor - INFO - processor.py:114 - TranscriptProcessor initialized
+2026-02-03 23:36:01,768 - transcription.processor - INFO - processor.py:145 - Processing loop started
+2026-02-03 23:36:01,768 - transcription.processor - INFO - processor.py:129 - Background processing started

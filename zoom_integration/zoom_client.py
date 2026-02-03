@@ -250,64 +250,42 @@ class ZoomClient:
         """Обработка различных сценариев входа в Zoom"""
         logger.info("Handling login scenarios...")
 
-        # Сценарий 1: Вход через приложение Zoom
+        # Даем время на загрузку страницы
+        await asyncio.sleep(3)
+
+        # Проверяем текущий URL
+        current_url = self.driver.current_url
+        logger.info(f"Current URL: {current_url}")
+
+        # Сценарий 1: Уже авторизованы и сразу переходим к встрече
+        if "zoom.us/j/" in current_url or "zoom.us/wc/" in current_url:
+            logger.info("Already on meeting page, skipping login")
+            return True
+
+        # Сценарий 2: Страница входа (signin)
+        if "zoom.us/signin" in current_url or "login" in current_url:
+            logger.info("On login page, attempting to sign in...")
+            return await self._perform_zoom_login()
+
+        # Сценарий 3: Страница присоединения к встрече
+        if "zoom.us/join" in current_url or "zoom.us/s/" in current_url:
+            logger.info("On join page, attempting to join meeting...")
+            return await self._join_from_join_page()
+
+        # Сценарий 4: Запрашивает открыть в приложении
         try:
-            open_zoom_btn = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, "//button[contains(text(), 'Open Zoom Meetings')]")
-                )
+            open_in_app_buttons = self.driver.find_elements(
+                By.XPATH,
+                "//button[contains(text(), 'Open') or contains(text(), 'Launch') or contains(text(), 'zoom.us')]"
             )
-            open_zoom_btn.click()
-            logger.info("Clicked 'Open Zoom Meetings'")
-            await asyncio.sleep(3)
+            if open_in_app_buttons:
+                logger.info("Found app open buttons, trying browser join...")
+                return await self._find_browser_join_option()
+        except:
+            pass
 
-        except TimeoutException:
-            logger.debug("No 'Open Zoom Meetings' button found")
-
-        # Сценарий 2: Ввод пароля
-        if settings.ZOOM_PASSWORD:
-            try:
-                password_field = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.ID, "input-for-pwd"))
-                )
-                password_field.send_keys(settings.ZOOM_PASSWORD)
-
-                join_btn = self.driver.find_element(By.ID, "joinBtn")
-                join_btn.click()
-                logger.info("Entered password and clicked join")
-                await asyncio.sleep(3)
-
-            except TimeoutException:
-                logger.debug("No password field found")
-
-        # Сценарий 3: Вход через браузер
-        try:
-            join_browser_btn = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, "//span[contains(text(), 'join from your browser')]")
-                )
-            )
-            join_browser_btn.click()
-            logger.info("Clicked 'join from your browser'")
-            await asyncio.sleep(3)
-
-        except TimeoutException:
-            logger.debug("No 'join from your browser' option")
-
-        # Сценарий 4: Ожидание загрузки интерфейса встречи
-        try:
-            WebDriverWait(self.driver, 15).until(
-                EC.presence_of_element_located(
-                    (By.CLASS_NAME, "footer-button")
-                )
-            )
-            logger.info("Meeting interface loaded")
-
-        except TimeoutException:
-            logger.warning("Meeting interface not loaded within timeout")
-
-        # Даем дополнительное время на загрузку
-        await asyncio.sleep(5)
+        # Если ничего не сработало, пробуем найти кнопку "Join from Browser"
+        return await self._find_browser_join_option()
 
     async def _verify_in_meeting(self) -> bool:
         """Проверка, что мы успешно вошли в встречу"""

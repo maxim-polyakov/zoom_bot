@@ -6,19 +6,18 @@
 import asyncio
 import signal
 import sys
-from datetime import datetime
+import time
 
 from config import settings
 from utils.logger import setup_logger
 
-# Импортируем компоненты с обработкой ошибок
 try:
     from zoom_integration.zoom_client import ZoomClient
     from dashboard.server import DashboardServer
     from transcription.webhook_server import WebhookServer
     from state_manager.meeting_state import MeetingState
-    from news_fetcher.news_agent import NewsAgent
     from llm_processing.analyzer import TranscriptAnalyzer
+    from news_fetcher.news_agent import NewsAgent
     from transcription.processor import TranscriptProcessor, get_transcript_processor
 
     COMPONENTS_LOADED = True
@@ -72,7 +71,7 @@ class ZoomAgentBot:
         self.zoom_client = ZoomClient(self.state)
 
         # Запуск фоновой обработки транскрипта
-        if hasattr(self.processor, 'start_processing'):
+        if self.processor:
             self.processor.start_processing()
 
         logger.info("All components initialized successfully")
@@ -82,23 +81,28 @@ class ZoomAgentBot:
         """Запуск основного потока работы в встрече"""
         logger.info("Starting meeting flow...")
 
-        # 1. Подключение к Zoom
-        if hasattr(self.zoom_client, 'connect'):
+        try:
+            # 1. Подключение к Zoom
             await self.zoom_client.connect()
 
-        # 2. Запуск демонстрации экрана
-        if hasattr(self.zoom_client, 'start_screen_share'):
+            # 2. Запуск демонстрации экрана
             await self.zoom_client.start_screen_share()
 
-        # 3. Запуск мониторинга соединения
-        monitoring_task = None
-        if hasattr(self.zoom_client, 'monitor_connection'):
+            # 3. Запуск мониторинга соединения в фоне
             monitoring_task = asyncio.create_task(
                 self.zoom_client.monitor_connection()
             )
 
-        logger.info("Meeting flow started successfully")
-        return monitoring_task
+            logger.info("Meeting flow started successfully")
+            return monitoring_task
+
+        except Exception as e:
+            logger.error(f"Failed to start meeting flow: {e}")
+            # Если не удалось подключиться, используем мок-данные
+            if settings.USE_MOCK_TRANSCRIPT:
+                logger.info("Falling back to mock transcript mode")
+                # Можно добавить генерацию мок-данных здесь
+            raise
 
     async def run(self):
         """Основной цикл работы бота"""
@@ -120,22 +124,32 @@ class ZoomAgentBot:
             logger.info("Bot is running. Press Ctrl+C to stop.")
 
             # Если не используем мок, запускаем процесс встречи
-            if not getattr(settings, 'USE_MOCK_TRANSCRIPT', True) and getattr(settings, 'ZOOM_MEETING_URL', None):
+            if not settings.USE_MOCK_TRANSCRIPT and settings.ZOOM_MEETING_URL:
                 try:
                     meeting_task = await self.start_meeting_flow()
                     if meeting_task:
                         await meeting_task
                 except Exception as e:
                     logger.error(f"Failed to start meeting flow: {e}")
+                    logger.info("Continuing without Zoom connection")
             else:
                 logger.info("Using mock transcript mode or no Zoom URL configured")
 
-            # Ожидание завершения
-            await asyncio.gather(
-                dashboard_task,
-                webhook_task,
-                return_exceptions=True
-            )
+            # Основной цикл ожидания
+            while self.running:
+                try:
+                    # Проверяем состояние дашборда
+                    if self.processor and hasattr(self.processor, 'force_process_sync'):
+                        # Периодически запускаем обработку
+                        result = self.processor.force_process_sync()
+                        if result and result.get("status") == "success":
+                            logger.debug("Dashboard updated via force process")
+
+                    await asyncio.sleep(10)  # Проверка каждые 10 секунд
+
+                except Exception as e:
+                    logger.error(f"Error in main wait loop: {e}")
+                    await asyncio.sleep(5)
 
         except Exception as e:
             logger.error(f"Error in main loop: {e}")
@@ -150,25 +164,21 @@ class ZoomAgentBot:
 
         # Останавливаем компоненты в правильном порядке
         try:
-            if self.processor and hasattr(self.processor, 'stop_processing'):
+            if self.processor:
                 self.processor.stop_processing()
-
-            if self.processor and hasattr(self.processor, 'shutdown'):
                 await self.processor.shutdown()
 
-            if self.zoom_client and hasattr(self.zoom_client, 'leave_meeting'):
+            if self.zoom_client:
                 await self.zoom_client.leave_meeting()
-
-            if self.zoom_client and hasattr(self.zoom_client, 'disconnect'):
                 await self.zoom_client.disconnect()
 
-            if self.dashboard_server and hasattr(self.dashboard_server, 'stop'):
+            if self.dashboard_server:
                 await self.dashboard_server.stop()
 
-            if self.webhook_server and hasattr(self.webhook_server, 'stop'):
+            if self.webhook_server:
                 await self.webhook_server.stop()
 
-            if self.news_agent and hasattr(self.news_agent, 'cleanup'):
+            if self.news_agent:
                 await self.news_agent.cleanup()
 
             logger.info("Shutdown complete")
@@ -182,11 +192,6 @@ def main():
     try:
         bot = ZoomAgentBot()
         asyncio.run(bot.run())
-    except ImportError as e:
-        print(f"Failed to start bot: {e}")
-        print("Please check if all dependencies are installed.")
-        print("Run: pip install -r requirements.txt")
-        sys.exit(1)
     except KeyboardInterrupt:
         print("\nBot stopped by user")
     except Exception as e:

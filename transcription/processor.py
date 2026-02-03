@@ -144,47 +144,74 @@ class TranscriptProcessor:
 
         logger.info("Processing loop started")
 
-        # Создаем новый event loop для этого потока
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        while not self.shutdown_event.is_set():
+            try:
+                # Проверяем, нужно ли обновить дашборд
+                if self._should_update_dashboard():
+                    # Создаем новый event loop для этого потока и запускаем обработку
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self.process_recent_transcript())
+                        loop.close()
+                    except Exception as e:
+                        logger.error(f"Error running processing in thread: {e}")
+                        self.stats["errors"] += 1
+
+                # Обрабатываем очередь синхронно
+                self._process_queue_sync()
+
+                # Очищаем устаревший кэш
+                self._cleanup_cache()
+
+                # Задержка перед следующей проверкой
+                time.sleep(1)
+
+            except Exception as e:
+                logger.error(f"Error in processing loop: {e}")
+                self.stats["errors"] += 1
+                time.sleep(5)
+
+    def _process_queue_sync(self):
+        """Синхронная обработка элементов из очереди"""
+        if not self.processing_queue:
+            return
 
         try:
-            while not self.shutdown_event.is_set():
-                try:
-                    # Проверяем, нужно ли обновить дашборд
-                    if self._should_update_dashboard():
-                        # Запускаем обработку в event loop этого потока
-                        future = asyncio.run_coroutine_threadsafe(
-                            self.process_recent_transcript(),
-                            self.loop
-                        )
-                        try:
-                            future.result(timeout=30)  # Таймаут 30 секунд
-                        except TimeoutError:
-                            logger.warning("Processing timed out")
-                        except Exception as e:
-                            logger.error(f"Processing error: {e}")
+            # Создаем event loop для обработки очереди
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-                    # Обрабатываем очередь
-                    self._process_queue()
+            tasks = []
+            while self.processing_queue:
+                task = self.processing_queue.popleft()
+                if task["type"] == "news_search":
+                    task_coro = self._search_news_for_entity(
+                        task["entity_name"],
+                        task["entity_type"]
+                    )
+                    tasks.append(task_coro)
 
-                    # Очищаем устаревший кэш
-                    self._cleanup_cache()
+            # Запускаем все задачи параллельно
+            if tasks:
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
-                    # Задержка перед следующей проверкой
-                    time.sleep(1)
-
-                except Exception as e:
-                    logger.error(f"Error in processing loop: {e}")
-                    self.stats["errors"] += 1
-                    time.sleep(5)
+            loop.close()
 
         except Exception as e:
-            logger.error(f"Processing loop fatal error: {e}")
-        finally:
-            if self.loop and not self.loop.is_closed():
-                self.loop.close()
+            logger.error(f"Error processing queue: {e}")
 
+    def force_process_sync(self):
+        """Синхронный метод для принудительной обработки"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self.process_recent_transcript())
+            loop.close()
+            return result
+        except Exception as e:
+            logger.error(f"Error in force_process_sync: {e}")
+            return {"status": "error", "error": str(e)}
     def _should_update_dashboard(self) -> bool:
         """Определение, нужно ли обновить дашборд"""
         with self.processing_lock:
