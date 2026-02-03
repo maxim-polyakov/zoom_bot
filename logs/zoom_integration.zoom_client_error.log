@@ -1,0 +1,4 @@
+2026-02-03 23:28:27,691 - zoom_integration.zoom_client - ERROR - zoom_client.py:215 - Failed to connect to Zoom: Could not verify meeting join
+2026-02-03 23:28:29,842 - zoom_integration.zoom_client - ERROR - zoom_client.py:343 - Not in meeting, cannot start screen share
+2026-02-03 23:30:58,845 - zoom_integration.zoom_client - ERROR - zoom_client.py:215 - Failed to connect to Zoom: 'str' object has no attribute 'value'
+2026-02-03 23:31:01,395 - zoom_integration.zoom_client - ERROR - zoom_client.py:343 - Not in meeting, cannot start screen share

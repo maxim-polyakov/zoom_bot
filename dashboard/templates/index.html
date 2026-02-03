@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom Meeting Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/script.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📊 Meeting Assistant Dashboard</h1>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <!-- Секция 1: Текущая тема -->
+            <section class="card current-topic">
+                <h2>🎯 Currently Discussing</h2>
+                <div class="topic-content" id="currentTopic">
+                    <p class="topic-placeholder">Waiting for meeting to start...</p>
+                </div>
+                <div class="topic-metadata">
+                    <span class="last-updated" id="lastUpdated">Last updated: --:--</span>
+                </div>
+            </section>
+
+            <!-- Секция 2: Краткая справка -->
+            <section class="card summary">
+                <h2>📋 Brief Summary</h2>
+                <div class="summary-content" id="summaryContent">
+                    <ul class="summary-list">
+                        <li>Discussion summary will appear here</li>
+                        <li>Key arguments and context</li>
+                        <li>Main points being discussed</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Секция 3: Ключевые сущности -->
+            <section class="card entities">
+                <h2>🔑 Key Entities</h2>
+                <div class="entities-container" id="entitiesContainer">
+                    <div class="entity-tags">
+                        <span class="entity-tag placeholder">No entities detected yet</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция 4: Решения и Next Steps -->
+            <section class="card decisions">
+                <h2>✅ Decisions / Next Steps</h2>
+                <div class="decisions-list" id="decisionsList">
+                    <div class="decision-item placeholder">
+                        <span class="decision-checkbox"></span>
+                        <span class="decision-text">Agreements and action items will appear here</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция 5: Открытые вопросы -->
+            <section class="card questions">
+                <h2>❓ Open Questions</h2>
+                <div class="questions-list" id="questionsList">
+                    <div class="question-item placeholder">
+                        <span class="question-icon">?</span>
+                        <span class="question-text">Unresolved questions will appear here</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция 6: Новости -->
+            <section class="card news">
+                <h2>📰 News & References</h2>
+                <div class="news-controls">
+                    <button class="btn-refresh" onclick="refreshNews()">🔄 Refresh News</button>
+                    <span class="news-freshness">Last 30 days</span>
+                </div>
+                <div class="news-list" id="newsList">
+                    <div class="news-item placeholder">
+                        <div class="news-source">News related to mentioned entities will appear here</div>
+                        <div class="news-summary">With summaries and links to sources</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция 7: Визуализация дискуссии -->
+            <section class="card visualization">
+                <h2>📈 Discussion Flow</h2>
+                <div class="chart-container">
+                    <canvas id="discussionChart"></canvas>
+                </div>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <span class="legend-color topic"></span>
+                        <span>Topic Changes</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color entity"></span>
+                        <span>Entities Mentioned</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color decision"></span>
+                        <span>Decisions Made</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="footer-info">
+                <span>Zoom Meeting Assistant v1.0</span>
+                <span>Auto-update every 60 seconds</span>
+            </div>
+            <div class="transcript-stats">
+                <span id="wordCount">Words: 0</span>
+                <span id="speakerCount">Speakers: 0</span>
+                <span id="duration">Duration: 00:00</span>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
