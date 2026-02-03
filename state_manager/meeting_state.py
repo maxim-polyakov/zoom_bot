@@ -167,6 +167,7 @@ class TopicAnalysis:
 class MeetingState:
     """Основной класс управления состоянием встречи"""
 
+
     def __init__(self):
         # Блокировка для потокобезопасности
         self.lock = threading.RLock()
@@ -219,22 +220,41 @@ class MeetingState:
 
     # ==================== УПРАВЛЕНИЕ СТАТУСОМ ====================
 
-    def update_status(self, status: MeetingStatus):
+    def update(self, data: Dict[str, Any]):
+        """Обновление состояния простым присваиванием значений по ключам"""
+        with self.lock:
+            for key, value in data.items():
+                # Проверяем, существует ли атрибут
+                if hasattr(self, key):
+                    setattr(self, key, value)
+                else:
+                    # Если атрибута нет, добавляем в stats или создаем динамически
+                    if key in self.stats:
+                        self.stats[key] = value
+                    else:
+                        # Создаем динамический атрибут
+                        setattr(self, key, value)
+
+            logger.debug(f"State updated with {len(data)} fields")
+
+    def update_status(self, status):
         """Обновление статуса встречи"""
         with self.lock:
             old_status = self.status
-            self.status = status
 
-            if status == MeetingStatus.IN_MEETING and not self.meeting_start_time:
-                self.meeting_start_time = datetime.now()
-
-            logger.info(f"Status changed: {old_status.value} -> {status.value}")
-
-            # Записываем в timeline
-            self._add_timeline_event("status_change", {
-                "old_status": old_status.value,
-                "new_status": status.value
-            })
+            # Если пришла строка, логируем как есть
+            if isinstance(status, str):
+                # Просто сохраняем строку
+                self.status_str = status
+                logger.info(f"Status changed: {old_status} -> {status}")
+            elif hasattr(status, 'value'):
+                # Если это Enum с value
+                self.status = status
+                logger.info(f"Status changed: {old_status.value} -> {status.value}")
+            else:
+                # Любой другой случай
+                self.status = status
+                logger.info(f"Status changed: {old_status} -> {status}")
 
     def get_status(self) -> str:
         """Получение текущего статуса"""

@@ -204,13 +204,31 @@ class TranscriptProcessor:
     def force_process_sync(self):
         """Синхронный метод для принудительной обработки"""
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self.process_recent_transcript())
-            loop.close()
-            return result
+            # Пытаемся получить работающий цикл
+            try:
+                # Если есть работающий цикл
+                loop = asyncio.get_running_loop()
+                logger.debug(f"Found running event loop, using run_coroutine_threadsafe")
+
+                # Важно: создаем корутину и передаем ее
+                coroutine = self.process_recent_transcript()
+
+                # Используем run_coroutine_threadsafe для потокобезопасности
+                future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+                result = future.result(timeout=30)  # 30 секунд таймаут
+                return result
+
+            except RuntimeError:
+                # Нет работающего цикла - создаем новый
+                logger.debug(f"No running event loop, creating new one with asyncio.run")
+                return asyncio.run(self.process_recent_transcript())
+
+        except asyncio.TimeoutError:
+            logger.error("Timeout in force_process_sync")
+            return {"status": "error", "error": "Processing timeout"}
+
         except Exception as e:
-            logger.error(f"Error in force_process_sync: {e}")
+            logger.error(f"Error in force_process_sync: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
     def _should_update_dashboard(self) -> bool:
         """Определение, нужно ли обновить дашборд"""

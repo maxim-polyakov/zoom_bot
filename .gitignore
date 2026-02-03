@@ -2,3 +2,5 @@
 /logs
 *.log
 .env
+*.pyc
+/zoom_sdk

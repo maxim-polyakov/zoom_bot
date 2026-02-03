@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     # ===== Logging Settings =====
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE: str = os.getenv("LOG_FILE", "zoom_agent.log")
+    ZOOM_SDK_DLL_PATH: str = os.getenv("ZOOM_SDK_DLL_PATH", "")
 
     class Config:
         env_file = ".env"
